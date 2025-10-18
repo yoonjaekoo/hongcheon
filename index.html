@@ -21,7 +21,7 @@
         <header class="bg-white shadow-md sticky top-0 z-10">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
                 <h1 class="text-3xl font-bold text-gray-800 tracking-tight">
-                    🏫 홍천초 익명게시판(만든사람도 누구인지 모름)
+                    🏫 홍천초 익명게시판 (만든사람도 누구인지 모름)
                 </h1>
                 <div id="auth-info" class="text-sm text-gray-500 rounded-full bg-gray-100 p-2">
                     <!-- 인증 정보가 여기에 표시됨 -->
@@ -45,18 +45,18 @@
                             <div class="mb-4">
                                 <label for="post-title" class="block text-sm font-medium text-gray-600 mb-1">제목</label>
                                 <input type="text" id="post-title" placeholder="솔직한 제목을 적어주세요 (최대 50자)" maxlength="50" required 
-                                       class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
                             </div>
 
                             <div class="mb-6">
                                 <label for="post-content" class="block text-sm font-medium text-gray-600 mb-1">내용</label>
                                 <textarea id="post-content" rows="6" placeholder="자유롭게 의견을 나눠주세요. 개인 정보는 절대 포함하지 마세요!" required 
-                                          class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 resize-none"></textarea>
+                                             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 resize-none"></textarea>
                             </div>
 
                             <button type="submit" id="submit-button"
-                                    class="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold shadow-md hover:bg-indigo-700 transition duration-150 ease-in-out disabled:opacity-50"
-                                    disabled>
+                                        class="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold shadow-md hover:bg-indigo-700 transition duration-150 ease-in-out disabled:opacity-50"
+                                        disabled>
                                 🚀 익명 게시글 등록
                             </button>
                         </form>
@@ -83,6 +83,12 @@
             </div>
 
         </main>
+        
+        <!-- 요청하신 추가 안내 문구 -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-4 mt-8 text-center text-xs text-gray-400">
+            추가/문의사항은 cstdio.code@gmail.com으로 메일을 보내주세요.
+        </div>
+
     </div>
 
     <script type="module">
@@ -105,6 +111,7 @@
         const appId = "school-anonymous-board-v1"; // Firestore 경로: /artifacts/school-anonymous-board-v1/public/data/posts
 
         // 2. Firebase 프로젝트 설정 정보 (사용자가 제공한 실제 키 적용)
+        // 이 키를 GitHub Pages 배포 시 사용해야 해!
         const firebaseConfig = {
             apiKey: "AIzaSyANZjd0jAQDj-tRed5tP-FB_08XBRXFrdU",
             authDomain: "hongcheon-ae71e.firebaseapp.com",
@@ -154,7 +161,6 @@
         // 3. Firebase 초기화 및 인증 (익명 로그인만 사용)
         async function initializeFirebase() {
             startLoading();
-            // 실제 키를 넣었기 때문에 키 유효성 검사는 제거함.
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -164,6 +170,7 @@
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
+                        // 사용자 ID는 익명성을 위해 8자리만 보여줌
                         document.getElementById('auth-info').textContent = `사용자 ID: ${userId.substring(0, 8)}... (익명 인증 완료)`;
                         submitButton.disabled = false;
                         console.log("Firebase Auth State Changed. User ID:", userId);
@@ -185,7 +192,7 @@
             } catch (error) {
                 console.error("Firebase 초기화 또는 인증 오류:", error);
                 // Firebase 키 오류 발생 시 안내
-                showModal("인증 오류", "Firebase 초기화에 실패했습니다. 키 정보나 Firestore 규칙을 확인해 주세요. (Error: " + error.message + ")");
+                showModal("인증 오류", "Firebase 초기화에 실패했습니다. 키 정보, 익명 인증 활성화, Firestore 규칙을 확인해 주세요. (Error: " + error.message + ")");
                 finishLoading();
             }
         }
@@ -213,6 +220,7 @@
 
             try {
                 // Firestore 공개 컬렉션 경로 사용
+                // 경로: artifacts/{appId}/public/data/posts
                 const postsCollection = collection(db, `artifacts/${appId}/public/data/posts`);
 
                 const newPost = {
