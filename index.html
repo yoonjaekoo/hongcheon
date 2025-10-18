@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>우리 학교 익명 게시판 (배포 준비 완료)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Inter 폰트 사용 및 기본 스타일 설정 */
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        .loading-bar { height: 4px; background-color: #3b82f6; width: 0; transition: width 0.3s ease; }
+    </style>
+</head>
+<body>
+
+    <div id="app" class="min-h-screen">
+        <!-- 네비게이션 바 -->
+        <header class="bg-white shadow-md sticky top-0 z-10">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+                <h1 class="text-3xl font-bold text-gray-800 tracking-tight">
+                    🏫 우리 학교
+                </h1>
+                <div id="auth-info" class="text-sm text-gray-500 rounded-full bg-gray-100 p-2">
+                    <!-- 인증 정보가 여기에 표시됨 -->
+                </div>
+            </div>
+        </header>
+
+        <!-- 로딩 인디케이터 -->
+        <div id="loading-indicator" class="loading-bar"></div>
+
+        <!-- 메인 콘텐츠 영역 -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                <!-- 익명 글쓰기 섹션 (2/3 지점) -->
+                <div class="lg:col-span-1">
+                    <div id="post-form-card" class="bg-white p-6 rounded-xl shadow-lg border border-indigo-100/50 transition-all duration-300 hover:shadow-xl">
+                        <h2 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">익명으로 이야기하기</h2>
+                        <form id="post-form" onsubmit="event.preventDefault(); submitPost()">
+                            
+                            <div class="mb-4">
+                                <label for="post-title" class="block text-sm font-medium text-gray-600 mb-1">제목</label>
+                                <input type="text" id="post-title" placeholder="솔직한 제목을 적어주세요 (최대 50자)" maxlength="50" required 
+                                       class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+
+                            <div class="mb-6">
+                                <label for="post-content" class="block text-sm font-medium text-gray-600 mb-1">내용</label>
+                                <textarea id="post-content" rows="6" placeholder="자유롭게 의견을 나눠주세요. 개인 정보는 절대 포함하지 마세요!" required 
+                                          class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 resize-none"></textarea>
+                            </div>
+
+                            <button type="submit" id="submit-button"
+                                    class="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold shadow-md hover:bg-indigo-700 transition duration-150 ease-in-out disabled:opacity-50"
+                                    disabled>
+                                🚀 익명 게시글 등록
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- 게시글 목록 섹션 (1/3 지점) -->
+                <div class="lg:col-span-2">
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-4">전체 게시판</h2>
+                    <div id="posts-list" class="space-y-4">
+                        <!-- 게시글들이 여기에 실시간으로 표시됩니다. -->
+                        <p id="empty-state" class="text-center text-gray-500 py-12 bg-white rounded-xl shadow-md border">아직 등록된 게시글이 없습니다. 첫 글을 작성해보세요!</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 메시지 모달 -->
+            <div id="message-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden items-center justify-center p-4 z-20">
+                <div class="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full">
+                    <h3 id="modal-title" class="text-xl font-bold mb-3 text-gray-800">알림</h3>
+                    <p id="modal-content" class="text-gray-600 mb-4"></p>
+                    <button onclick="closeModal()" class="w-full bg-indigo-500 text-white py-2 rounded-lg hover:bg-indigo-600 transition">확인</button>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script type="module">
+        // Firebase 초기화 및 Firestore/Auth 모듈 가져오기
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firestore 로깅 활성화 (디버깅용)
+        setLogLevel('debug');
+        
+        let db;
+        let auth;
+        let userId = null;
+        let isAuthReady = false;
+
+        // =================================================================
+        // 1. App ID 설정 (Firestore 컬렉션 경로에 사용됨)
+        // 이 값은 Firestore 규칙에서 사용하는 'appId' 경로에 해당하며, 고유하게 유지해야 해.
+        const appId = "school-anonymous-board-v1"; // Firestore 경로: /artifacts/school-anonymous-board-v1/public/data/posts
+
+        // 2. Firebase 프로젝트 설정 정보 (사용자가 제공한 실제 키 적용)
+        const firebaseConfig = {
+            apiKey: "AIzaSyANZjd0jAQDj-tRed5tP-FB_08XBRXFrdU",
+            authDomain: "hongcheon-ae71e.firebaseapp.com",
+            projectId: "hongcheon-ae71e",
+            storageBucket: "hongcheon-ae71e.firebasestorage.app",
+            messagingSenderId: "638841201305",
+            appId: "1:638841201305:web:6503e0cb5cf9ab2011ce08",
+            // measurementId: "G-8SSJGFP8WT" // 분석 기능은 사용하지 않아 제외함
+        };
+        
+        // Custom Token 인증은 GitHub Pages에서 사용할 수 없어 무시함.
+        const initialAuthToken = null; 
+
+        // 기타 DOM 요소 및 모달 관련 함수
+        const loadingBar = document.getElementById('loading-indicator');
+        const submitButton = document.getElementById('submit-button');
+        const modal = document.getElementById('message-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalContent = document.getElementById('modal-content');
+
+        window.showModal = (title, content) => {
+            modalTitle.textContent = title;
+            modalContent.textContent = content;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        };
+
+        window.closeModal = () => {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        };
+
+        function startLoading() {
+            loadingBar.style.width = '30%';
+            loadingBar.style.transitionDuration = '10s'; 
+        }
+
+        function finishLoading() {
+            loadingBar.style.width = '100%';
+            loadingBar.style.transitionDuration = '0.3s';
+            setTimeout(() => {
+                loadingBar.style.width = '0%';
+                loadingBar.style.transitionDuration = '0s';
+            }, 300);
+        }
+
+        // 3. Firebase 초기화 및 인증 (익명 로그인만 사용)
+        async function initializeFirebase() {
+            startLoading();
+            // 실제 키를 넣었기 때문에 키 유효성 검사는 제거함.
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // 인증 상태 리스너 설정
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        document.getElementById('auth-info').textContent = `사용자 ID: ${userId.substring(0, 8)}... (익명 인증 완료)`;
+                        submitButton.disabled = false;
+                        console.log("Firebase Auth State Changed. User ID:", userId);
+                    } else {
+                        userId = null;
+                        document.getElementById('auth-info').textContent = '인증 대기 중...';
+                        submitButton.disabled = true;
+                        console.log("Firebase Auth State Changed. No user.");
+                    }
+                    isAuthReady = true;
+                    finishLoading();
+                });
+
+                // 무조건 익명 로그인 사용
+                await signInAnonymously(auth);
+                console.log("Signed in Anonymously.");
+
+
+            } catch (error) {
+                console.error("Firebase 초기화 또는 인증 오류:", error);
+                // Firebase 키 오류 발생 시 안내
+                showModal("인증 오류", "Firebase 초기화에 실패했습니다. 키 정보나 Firestore 규칙을 확인해 주세요. (Error: " + error.message + ")");
+                finishLoading();
+            }
+        }
+        
+        // 4. 익명 게시글 작성 로직
+        window.submitPost = async () => {
+            if (!isAuthReady || !userId) {
+                showModal("오류", "인증이 완료되지 않아 글을 작성할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+                return;
+            }
+
+            const titleInput = document.getElementById('post-title');
+            const contentInput = document.getElementById('post-content');
+            
+            const title = titleInput.value.trim();
+            const content = contentInput.value.trim();
+
+            if (!title || !content) {
+                showModal("경고", "제목과 내용을 모두 입력해 주세요.");
+                return;
+            }
+
+            submitButton.disabled = true;
+            submitButton.textContent = '등록 중...';
+
+            try {
+                // Firestore 공개 컬렉션 경로 사용
+                const postsCollection = collection(db, `artifacts/${appId}/public/data/posts`);
+
+                const newPost = {
+                    title: title,
+                    content: content,
+                    author_display: "익명", 
+                    hidden_author_uid: userId, 
+                    timestamp: serverTimestamp(), 
+                };
+
+                await addDoc(postsCollection, newPost);
+
+                // 성공 메시지 및 폼 초기화
+                showModal("성공", "익명 게시글이 성공적으로 등록되었습니다.");
+                titleInput.value = '';
+                contentInput.value = '';
+                
+            } catch (e) {
+                console.error("게시글 작성 중 오류 발생:", e);
+                showModal("오류", "게시글 등록에 실패했습니다. (Error: " + e.message + ")");
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = '🚀 익명 게시글 등록';
+            }
+        };
+
+        // 5. 게시글 목록 실시간 가져오기 및 렌더링
+        function setupPostListener() {
+            if (!db) {
+                console.warn("Firestore is not initialized. Skipping listener setup.");
+                return;
+            }
+
+            const postsList = document.getElementById('posts-list');
+            const emptyState = document.getElementById('empty-state');
+            
+            // Firestore 쿼리: posts 컬렉션에서 timestamp를 기준으로 내림차순 정렬
+            const postsCollection = collection(db, `artifacts/${appId}/public/data/posts`);
+            const q = query(postsCollection, orderBy("timestamp", "desc"));
+
+            // 실시간 리스너 설정
+            onSnapshot(q, (snapshot) => {
+                postsList.innerHTML = ''; // 기존 목록 초기화
+                let postCount = 0;
+
+                snapshot.forEach((doc) => {
+                    const post = doc.data();
+                    const postId = doc.id;
+                    postCount++;
+
+                    // 타임스탬프 포맷팅
+                    let timeString = '등록 중...';
+                    if (post.timestamp && post.timestamp.toDate) {
+                        const date = post.timestamp.toDate();
+                        timeString = date.toLocaleDateString("ko-KR", { 
+                            year: 'numeric', month: '2-digit', day: '2-digit', 
+                            hour: '2-digit', minute: '2-digit' 
+                        });
+                    }
+
+                    // 게시글 카드 생성
+                    const postElement = document.createElement('div');
+                    postElement.className = 'bg-white p-6 rounded-xl shadow-lg border-l-4 border-indigo-400/80 hover:shadow-xl transition duration-200';
+                    postElement.innerHTML = `
+                        <div class="flex justify-between items-start mb-2">
+                            <h3 class="text-xl font-bold text-gray-800">${post.title}</h3>
+                            <span class="text-sm font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">${post.author_display}</span>
+                        </div>
+                        <p class="text-gray-700 whitespace-pre-wrap mb-4">${post.content}</p>
+                        <div class="text-xs text-gray-400 flex justify-between">
+                            <span>${timeString}</span>
+                            <!-- 글 ID는 디버깅 및 특정 기능 구현 시 유용 -->
+                            <span class="opacity-0 lg:opacity-100">ID: ${postId}</span>
+                        </div>
+                    `;
+                    postsList.appendChild(postElement);
+                });
+
+                // 게시글이 없을 경우 빈 상태 표시
+                if (postCount === 0) {
+                    emptyState.classList.remove('hidden');
+                } else {
+                    emptyState.classList.add('hidden');
+                }
+                
+            }, (error) => {
+                console.error("실시간 데이터 로딩 오류:", error);
+                showModal("데이터 오류", "게시글 목록을 불러오는 데 실패했습니다.");
+            });
+        }
+
+        // 앱 시작
+        window.onload = async () => {
+            await initializeFirebase();
+            // 인증이 완료된 후에 리스너 설정
+            const unsubscribe = onAuthStateChanged(auth, (user) => {
+                if (user || !initialAuthToken) { 
+                    setupPostListener();
+                    unsubscribe(); 
+                }
+            });
+        };
+    </script>
+</body>
+</html>
